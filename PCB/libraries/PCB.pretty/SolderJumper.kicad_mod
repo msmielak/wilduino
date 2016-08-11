@@ -1,0 +1,13 @@
+(module SolderJumper (layer F.Cu) (tedit 503C85E4)
+  (fp_text reference J1 (at -1.27 -5.08) (layer F.SilkS) hide
+    (effects (font (thickness 0.3048)))
+  )
+  (fp_text value SOLDERJUMPER (at 0 -7.62) (layer F.SilkS) hide
+    (effects (font (thickness 0.3048)))
+  )
+  (fp_line (start -0.3556 0) (end 0.3556 0) (layer F.Mask) (width 0.381))
+  (pad 2 smd trapezoid (at 0 0.3048) (size 0.7493 0.44958) (rect_delta 0 -0.29972 ) (layers F.Cu F.Paste F.Mask)
+    (solder_mask_margin 0.127))
+  (pad 1 smd trapezoid (at 0 -0.3048) (size 0.7493 0.44958) (rect_delta 0 0.29972 ) (layers F.Cu F.Paste F.Mask)
+    (solder_mask_margin 0.127))
+)
