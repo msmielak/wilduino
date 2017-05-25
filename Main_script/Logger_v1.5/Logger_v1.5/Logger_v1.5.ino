@@ -3,18 +3,16 @@
  * Logger_v1.4.ino
  * Robert Farrell 22/5/2017
  * GPS configuration (configGPS(), sendUBX() and getACK_UBX()) 
- * based upon https://ukhas.org.uk/guides:ublox6 
+ * based upon https://ukhas.org.uk/guides:ublox6 calcChecksum()
+ * from https://playground.arduino.cc/UBlox/GPS
  * 
  * Configures u-blox GPS, starts HP206c Barometric sensor, and
  * sets RTC to AEST time from GPS. It then samples data at defined,
  * configurable, intervals. HP206c provides temperature, pressure
  * and altitude, with time of sampling. GPS sampling provides 
- * position data, again with time of sampling. Sleep functions 
- * have been implemented that turn off GPS and put anarduino to  
- * sleep. These sleep functions are for long sleep, during day,
- * plus short sleep, between measurements
- * 
- * NOTE: long sleep duration must be set manually. See GPSSleep() comments.
+ * position data. Sleep functions have been implemented that turn
+ * off GPS and put anarduino to sleep. These sleep functions are
+ * for long sleep, during day, plus short sleep, between measurements
  * 
  * Data is output to serial monitor, as well as saved to SD card.
  * 
@@ -22,7 +20,7 @@
 
 #include <SD.h>
 #include <SPI.h>
-#include <LowPower.h>
+#include <Narcoleptic.h>
 #include <avr/sleep.h>
 #include <HP20x_dev.h>
 #include <Wire.h>
@@ -31,26 +29,23 @@
 #include <TimeLib.h>
 #include <SoftwareSerial.h>
 
-#define TIMEOFSLEEP 10					 //hour (24) when GPS and anarduino go into power saving
-#define SLEEPFOR 36000000				 //Time (ms) to be in power saving (currently 10 hours).
-										 //Currently not used, but could be used in GPSSleep()
-										 //to automate setting of the setSleep array.
-#define SLEEPFORHRS SLEEPFOR / 3600000   //SLEEPFOR converted to hours
-#define HP20LOG 60						 //Logging schedule for barometric data, in seconds
-#define GPSLOG 120						 //Logging schedule for GPS position data, in seconds.
-										 //The assumption is that the barometric data is required
-										 //more frequently than the GPS data. See below, schdCount
-										 //variable.
+#define TIMEOFSLEEP 19					  //hour (24) when GPS and anarduino go into power saving
+#define SLEEPFOR 3600000				  //Time (ms) to be in power saving (currently 10 hours).
+#define HP20LOG 60						  //Logging schedule for barometric data, in seconds
+#define GPSLOG 120						  //Logging schedule for GPS position data, in seconds.
+										  //The assumption is that the barometric data is required
+										  //more frequently than the GPS data. See below, schdCount
+										  //variable.
 
 SoftwareSerial gpsSerial(A2, A3);
 MCP7940RTC *pRTC;
 uint8_t ret = 0, schdCount = GPSLOG / HP20LOG;
-time_t prevT_HP = 0;  //used for timing of data logging
 
 void setup()
 {
 	pinMode(3, INPUT);
 	Serial.begin(9600);        //start serial for output
+	delay(2000);
 	Serial.println(F("Initialising...."));
 	//Start gps softwareSerial port
 	gpsSerial.begin(9600);
@@ -100,21 +95,15 @@ void loop()
 {
 	//check whether time to go to sleep; sleep if yes
 	sleepLong();
-  
-	//Get the current time in seconds since Jan 1 1970
-	time_t currT = pRTC->getTimeRTC();
-
-	//sleep between measurements
-	while(currT - prevT_HP < HP20LOG)
-	{
-		LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
-		currT = pRTC->getTimeRTC();
-	}
 
 	//Time elapsed exceeds barometric sensor schedule: get data
 	getHP20Data();
-	prevT_HP = currT;     //reset HP20x log timer
 	Serial.println();
+	delay(500);
+
+	//sleep between measurements
+	sleepTimer(HP20LOG * 1000L);
+	delay(500);
 }
 
 /*
@@ -427,6 +416,27 @@ void setNewTimeRTC()
 	delay(1000);
 }
 
+void sleepTimer(long duration)
+{
+	//Turn off as many power sources as possible
+	Narcoleptic.disableTimer1();
+	Narcoleptic.disableTimer2();
+	Narcoleptic.disableSerial();
+	Narcoleptic.disableADC();
+	Narcoleptic.disableWire();
+	Narcoleptic.disableSPI();
+
+	//go to sleep for parameter passed time
+	Narcoleptic.delay(duration);
+
+	//Turn on the peripherals
+	Narcoleptic.enableTimer1();
+	Narcoleptic.enableTimer2();
+	Narcoleptic.enableSerial();
+	Narcoleptic.enableADC();
+	Narcoleptic.enableWire();
+	Narcoleptic.enableSPI();
+}
 /*
  * Gets the date and time as comma separated data and saves to file.
  * 
@@ -460,7 +470,7 @@ void getTime(File &data)
 
 /*
  * Opens data file and calls getTime(). It then reads temperature, pressure,
- * altitude, from HP206c. If enough time has elapsed, then it get GPS data
+ * altitude, from HP206c. If enough time has elapsed, then it gets GPS data
  */
 void getHP20Data()
 {
@@ -538,17 +548,21 @@ void getGPSData(File &data)
 	delay(200);
 }
 /*
- * Simply sets up UBX message for turning off GPS and sends it.
- * Duration of off is given in the setSleep array; the value passed
- * should be the value in SLEEPFOR.
- * 
- * PLEASE NOTE: Must change setSleep[], according to SLEEPFOR, manually!
- * At the moment, use u-center, UBX-RXM-PMREQ, and copy hex string 
- * to setSleep array.
+ * Sets up UBX message for turning off GPS by calculating hex value of
+ * SLEEPFOR and inserting it into setSleep array. Checksum is then 
+ * calculated and appended. UBX message is then sent to GPS.
  */
 void GPSSleep()
 {
-	uint8_t setSleep[] = {0xB5, 0x62, 0x02, 0x41, 0x08, 0x00, 0x00, 0x51, 0x25, 0x02, 0x02, 0x00, 0x00, 0x00, 0xC5, 0x5A};
+	union long2Hex
+	{
+		unsigned long l;
+		uint8_t hex[4];
+	}conv;
+
+	conv.l = SLEEPFOR;
+	uint8_t setSleep[] = {0xB5, 0x62, 0x02, 0x41, 0x08, 0x00, conv.hex[0], conv.hex[1], conv.hex[2], conv.hex[3], 0x02, 0x00, 0x00, 0x00, 0x00, 0x00};
+	calcChecksum(&setSleep[2], sizeof(setSleep) - 4);
 	sendUBX(setSleep, sizeof(setSleep)/sizeof(uint8_t));
 }
 
@@ -562,20 +576,16 @@ void sleepLong()
 {
 	uint8_t hrOfDay = pRTC->getHour();
 	uint8_t minutes = pRTC->getMinute();
-	long seconds = (pRTC->getSecond() + 2) * 1000;
 
 	if(hrOfDay == TIMEOFSLEEP && minutes == 0)
 	{
 		Serial.println(F("Entering sleep mode ... "));
-		delay(100);
 		GPSSleep();
+		delay(500);
 
-		while(hrOfDay < TIMEOFSLEEP + SLEEPFORHRS)
-		{
-			LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
-			hrOfDay = pRTC->getHour();
-		}
-		delay(seconds);
+		sleepTimer(SLEEPFOR);
+		//Make sure that GPS has woken up before proceeding.
+		delay(1000);
 
 		//Use this delay, instead of the one above, if you want the GPS
 		//to reobtain a fix before logging data.
@@ -583,4 +593,20 @@ void sleepLong()
 		Serial.println();
 		Serial.println(F("leaving sleep mode ... "));
 	}
+}
+/*
+ * Calculates the checksum for a UBX packet
+ */
+void calcChecksum(uint8_t *checksum, uint8_t sizeOf) 
+{
+  uint8_t CK_A = 0, CK_B = 0;
+  for (uint8_t i = 0; i < sizeOf ;i++) 
+  {
+    CK_A = CK_A + *checksum;
+    CK_B = CK_B + CK_A;
+    checksum++;
+  }
+  *checksum = CK_A;
+  checksum++;
+  *checksum = CK_B;
 }
