@@ -2,20 +2,20 @@
 /*
  * Logger_v1.4.ino
  * Robert Farrell 22/5/2017
- * GPS configuration (configGPS(), sendUBX() and getACK_UBX()) 
+ * GPS configuration (configGPS(), sendUBX() and getACK_UBX())
  * based upon https://ukhas.org.uk/guides:ublox6 calcChecksum()
  * from https://playground.arduino.cc/UBlox/GPS
- * 
+ *
  * Configures u-blox GPS, starts HP206c Barometric sensor, and
  * sets RTC to AEST time from GPS. It then samples data at defined,
  * configurable, intervals. HP206c provides temperature, pressure
- * and altitude, with time of sampling. GPS sampling provides 
+ * and altitude, with time of sampling. GPS sampling provides
  * position data. Sleep functions have been implemented that turn
  * off GPS and put anarduino to sleep. These sleep functions are
  * for long sleep, during day, plus short sleep, between measurements
- * 
+ *
  * Data is output to serial monitor, as well as saved to SD card.
- * 
+ *
  */
 
 #include <SD.h>
@@ -28,6 +28,14 @@
 #include <Time.h>
 #include <TimeLib.h>
 #include <SoftwareSerial.h>
+
+//Libraries to reduce power consumption
+#include <RH_RF95.h>
+#include <SPIFlash.h>
+RH_RF95 rf95;
+SPIFlash flash(5, 0);  //Anarduino
+//SPIFlash flash(8, 0xEF30); // flash(SPI_CS, MANUFACTURER_ID)
+
 
 #define TIMEOFSLEEP 19					  //hour (24) when GPS and anarduino go into power saving
 #define SLEEPFOR 3600000				  //Time (ms) to be in power saving (currently 10 hours).
@@ -44,6 +52,9 @@ uint8_t ret = 0, schdCount = GPSLOG / HP20LOG;
 void setup()
 {
 	pinMode(3, INPUT);
+	pinMode(9, OUTPUT);
+
+
 	Serial.begin(9600);        //start serial for output
 	delay(2000);
 	Serial.println(F("Initialising...."));
@@ -51,10 +62,16 @@ void setup()
 	gpsSerial.begin(9600);
 	delay(2000);
 
+//Turning off flash memory and radio module
+	rf95.init();
+	rf95.sleep();
+	flash.sleep();
+Serial.println(F("Flash memory and RF95 module off"));
+
 	//Reset HP20x_dev
 	HP20x.begin();
 	delay(100);
- 
+
 	//Determine HP20x_dev is available or not
 	ret = HP20x.isAvailable();
 	if(OK_HP20X_DEV == ret)
@@ -107,9 +124,9 @@ void loop()
 }
 
 /*
- * Configures the u-blox GPS. The GPS is first set back to factory 
- * defaults, just to make sure that no errant settings are still present. 
- * Navigation mode is then set to pedestrian; NMEA messages - GLL, GSA, 
+ * Configures the u-blox GPS. The GPS is first set back to factory
+ * defaults, just to make sure that no errant settings are still present.
+ * Navigation mode is then set to pedestrian; NMEA messages - GLL, GSA,
  * GSV, RMC, VTG, GGA, TXT - are turned off; and the current settings are saved.
  * Ten SUCCESS! statements should be received. If any configuration fails,
  * then the configuration is retried.
@@ -117,7 +134,7 @@ void loop()
 void configGPS()
 {
 	boolean gps_set_success = false;
-  
+
 	//Making sure settings are at default
 	Serial.println(F("Setting ublox to defaults"));
 	uint8_t defConf[] = {0xB5, 0X62, 0x06, 0x09, 0x0D, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x01, 0x19, 0x98};
@@ -229,7 +246,7 @@ void configGPS()
 	}
 }
 
-/* 
+/*
  *  Send a byte array of UBX protocol to the GPS
  */
 void sendUBX(uint8_t *MSG, uint8_t len)
@@ -240,11 +257,21 @@ void sendUBX(uint8_t *MSG, uint8_t len)
 		Serial.print(MSG[i], HEX);
 	}
 	gpsSerial.println();
+
+//blink LED to confirm GPS configuration (2 times)
+digitalWrite(9, HIGH);
+delay(150);
+digitalWrite(9, LOW);
+delay(150);
+digitalWrite(9, HIGH);
+delay(150);
+digitalWrite(9, LOW);
+
 }
 
-/* 
- * Calculate expected UBX ACK packet and parse UBX response from GPS. 
- * Returns true on success and false on failure. 
+/*
+ * Calculate expected UBX ACK packet and parse UBX response from GPS.
+ * Returns true on success and false on failure.
  */
 boolean getUBX_ACK(uint8_t *MSG)
 {
@@ -253,7 +280,7 @@ boolean getUBX_ACK(uint8_t *MSG)
 	uint8_t ackPacket[10];
 	unsigned long startTime = millis();
 	Serial.print(F(" * Reading ACK response: "));
- 
+
 	//Construct the expected ACK packet
 	ackPacket[0] = 0xB5;  // header
 	ackPacket[1] = 0x62;  // header
@@ -265,17 +292,17 @@ boolean getUBX_ACK(uint8_t *MSG)
 	ackPacket[7] = MSG[3];  // ACK id
 	ackPacket[8] = 0;   // CK_A
 	ackPacket[9] = 0;   // CK_B
- 
+
 	//Calculate the checksums
 	for(uint8_t i=2; i<8; i++)
 	{
 		ackPacket[8] = ackPacket[8] + ackPacket[i];
 		ackPacket[9] = ackPacket[9] + ackPacket[8];
 	}
- 
+
 	while(true)
 	{
- 
+
 		// Test for success
 		if(ackByteID > 9)
 		{
@@ -283,7 +310,7 @@ boolean getUBX_ACK(uint8_t *MSG)
 			Serial.println(F(" (SUCCESS!)"));
 			return true;
 		}
- 
+
 		// Timeout if no valid response in 3 seconds
 		if(millis() - startTime > 3000)
 		{
@@ -294,12 +321,12 @@ boolean getUBX_ACK(uint8_t *MSG)
 			}
 			return false;
 		}
- 
+
 		// Make sure data is available to read
 		if(gpsSerial.available())
 		{
 			b = gpsSerial.read();
- 
+
 			// Check that bytes arrive in sequence as per expected ACK packet
 			if(b == ackPacket[ackByteID])
 			{
@@ -323,7 +350,7 @@ void setNewTimeRTC()
 	uint8_t count = 0;
 	char input;
 	boolean complete = false;
- 
+
 	//Get GPS date/time data
 	gpsSerial.println(F("$PUBX,04*37"));
 
@@ -439,7 +466,7 @@ void sleepTimer(long duration)
 }
 /*
  * Gets the date and time as comma separated data and saves to file.
- * 
+ *
  */
 void getTime(File &data)
 {
@@ -513,6 +540,20 @@ void getHP20Data()
 			}
 			schdCount++;
 			file.close();
+
+//Blink to confirm recording altitude data (3 times)
+digitalWrite(9, HIGH);
+delay(150);
+digitalWrite(9, LOW);
+delay(150);
+digitalWrite(9, HIGH);
+delay(150);
+digitalWrite(9, LOW);
+delay(150);
+digitalWrite(9, HIGH);
+delay(150);
+digitalWrite(9, LOW);
+
 		}
 		else
 		{
@@ -523,7 +564,7 @@ void getHP20Data()
 }
 
 /*
- * Gets GPS data, cleaning it of extraneous junk 
+ * Gets GPS data, cleaning it of extraneous junk
  */
 void getGPSData(File &data)
 {
@@ -549,7 +590,7 @@ void getGPSData(File &data)
 }
 /*
  * Sets up UBX message for turning off GPS by calculating hex value of
- * SLEEPFOR and inserting it into setSleep array. Checksum is then 
+ * SLEEPFOR and inserting it into setSleep array. Checksum is then
  * calculated and appended. UBX message is then sent to GPS.
  */
 void GPSSleep()
@@ -568,8 +609,8 @@ void GPSSleep()
 
 /*
  * Gets the hour of the day from the RTC and checks to see whether
- * this corresponds to defined TIMEOFSLEEP. It then turns the GPS off 
- * and puts the anarduino to sleep. If it isn't the specified hour of 
+ * this corresponds to defined TIMEOFSLEEP. It then turns the GPS off
+ * and puts the anarduino to sleep. If it isn't the specified hour of
  * the day, then it simply exits.
  */
 void sleepLong()
@@ -597,10 +638,10 @@ void sleepLong()
 /*
  * Calculates the checksum for a UBX packet
  */
-void calcChecksum(uint8_t *checksum, uint8_t sizeOf) 
+void calcChecksum(uint8_t *checksum, uint8_t sizeOf)
 {
   uint8_t CK_A = 0, CK_B = 0;
-  for (uint8_t i = 0; i < sizeOf ;i++) 
+  for (uint8_t i = 0; i < sizeOf ;i++)
   {
     CK_A = CK_A + *checksum;
     CK_B = CK_B + CK_A;
