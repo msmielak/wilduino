@@ -1,0 +1,4 @@
+-test GPS power consumption when fix is achieved (MS) - appears to be around 30-35mA. Is that pedestrian mode? Should be switched into on/of mode?
+-GPS low power mode in between fixes. 
+-see if MPU9255 is by default in sleep mode or not and turn in into sleep mode if needed. Check default register values, check if there is a way to permanently set it up for sleep mode so that it doesnt use our memory.
+register map for MPU9255: https://stanford.edu/class/ee267/misc/MPU-9255-Register-Map.pdf
