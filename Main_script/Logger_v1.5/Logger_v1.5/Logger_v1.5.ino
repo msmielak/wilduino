@@ -30,17 +30,17 @@
 #include <SoftwareSerial.h>
 
 //Libraries to reduce power consumption
-#include <RH_RF95.h>
-#include <SPIFlash.h>
-RH_RF95 rf95;
-SPIFlash flash(5, 0);  //Anarduino
+//#include <RH_RF95.h>
+//#include <SPIFlash.h>
+//RH_RF95 rf95;
+//SPIFlash flash(5, 0);  //Anarduino
 //SPIFlash flash(8, 0xEF30); // flash(SPI_CS, MANUFACTURER_ID)
 
 
 #define TIMEOFSLEEP 19					  //hour (24) when GPS and anarduino go into power saving
 #define SLEEPFOR 3600000				  //Time (ms) to be in power saving (currently 10 hours).
-#define HP20LOG 60						  //Logging schedule for barometric data, in seconds
-#define GPSLOG 120						  //Logging schedule for GPS position data, in seconds.
+#define HP20LOG 150						  //Logging schedule for barometric data, in seconds
+#define GPSLOG 300						  //Logging schedule for GPS position data, in seconds.
 										  //The assumption is that the barometric data is required
 										  //more frequently than the GPS data. See below, schdCount
 										  //variable.
@@ -63,10 +63,10 @@ void setup()
 	delay(2000);
 
 //Turning off flash memory and radio module
-	rf95.init();
-	rf95.sleep();
-	flash.sleep();
-Serial.println(F("Flash memory and RF95 module off"));
+//	rf95.init();
+//	rf95.sleep();
+//	flash.sleep();
+//Serial.println(F("Flash memory and RF95 module off"));
 
 	//Reset HP20x_dev
 	HP20x.begin();
