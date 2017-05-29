@@ -1,4 +1,12 @@
 -test GPS power consumption when fix is achieved (MS) - appears to be around 30-35mA. Is that pedestrian mode? Should be switched into on/of mode?
--GPS low power mode in between fixes. 
+-GPS low power mode in between fixes (check registers) 
+
+Theoretical GPS logging schedule:
+1. on setup, once everything is programmed, uC waits for first GPS fix. After the fix is obtained (ephemeris updated) it blinks that to the user and puts GPS into OFF mode (power saving) untill turned back on (will probably be somethin around 10 min).
+2. Loop records GPS and altitude position to SD card and goes into deep sleep (Narcoleptic or otherwise) for programmed time. After programmed time it wakes up Baro and GPS and waits in sleep mode for 5-10s. Wakes up to read altitude data (should be stable) and checks if GPS already has a fix. If not, goes back to sleep for 5-10s and checks GPS. Alternatively GPS could wake up uC when it has a fix but I dont think there is interrupt pin from GPS (there is time pulse one).
+3. Once there is proper GPS fix whole unit goes back to deep sleep.
+
+
+
 -see if MPU9255 is by default in sleep mode or not and turn in into sleep mode if needed. Check default register values, check if there is a way to permanently set it up for sleep mode so that it doesnt use our memory.
 register map for MPU9255: https://stanford.edu/class/ee267/misc/MPU-9255-Register-Map.pdf
