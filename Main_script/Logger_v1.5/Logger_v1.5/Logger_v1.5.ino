@@ -68,6 +68,17 @@ void setup()
 //	flash.sleep();
 //Serial.println(F("Flash memory and RF95 module off"));
 
+
+//Putting MPU9255 into sleep mode
+ Wire.begin(9600);
+ Wire.beginTransmission(0x68);
+ Wire.write(0x6B);
+ Wire.write(0x40);
+ Wire.endTransmission();
+
+delay(200);
+	
+	
 	//Reset HP20x_dev
 	HP20x.begin();
 	delay(100);
